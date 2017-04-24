@@ -1,0 +1,1 @@
+name = Image Labeling using TensorFlow and the Inception model
