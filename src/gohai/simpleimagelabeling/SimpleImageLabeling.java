@@ -19,14 +19,8 @@
 
 package gohai.simpleimagelabeling;
 
-import java.io.IOException;
-import java.io.PrintStream;
-import java.nio.charset.Charset;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.List;
 import org.tensorflow.DataType;
 import org.tensorflow.Graph;
 import org.tensorflow.Output;
@@ -37,11 +31,22 @@ import processing.core.*;
 
 
 /**
- *
+ *  XXX
  */
 public class SimpleImageLabeling {
 
+  private static final String graphDefFn = "tensorflow_inception_graph.pb";
+  private static final String labelsFn = "imagenet_comp_graph_label_strings.txt";
+  private static final int maxLabels = 10;
+
   protected PApplet parent;
+  // loaded from file
+  protected byte[] graphDef;
+  protected String[] allLabels;
+  // calculated
+  public int length;
+  protected float[] probabilities;
+  protected String[] labels;
 
 
   /**
@@ -49,34 +54,103 @@ public class SimpleImageLabeling {
    */
   public SimpleImageLabeling(PApplet parent) {
     this.parent = parent;
-    System.out.println("Hello from " + TensorFlow.version());
+
+    System.out.println("Using TensorFlow " + TensorFlow.version());
+    // attempt to load the default model
+    // this takes a while currently
+    loadModel(graphDefFn, labelsFn);
   }
 
-
   /**
-   *  Original TensorFlow example code below
+   *  XXX
    */
-
-  private static void main(String[] args) {
-    String modelDir = "path to directory";
-    String imageFile = "path to jpeg file";
-
-    byte[] graphDef = readAllBytesOrExit(Paths.get(modelDir, "tensorflow_inception_graph.pb"));
-    List<String> labels =
-        readAllLinesOrExit(Paths.get(modelDir, "imagenet_comp_graph_label_strings.txt"));
-    byte[] imageBytes = readAllBytesOrExit(Paths.get(imageFile));
-
-    try (Tensor image = constructAndExecuteGraphToNormalizeImage(imageBytes)) {
-      float[] labelProbabilities = executeInceptionGraph(graphDef, image);
-      int bestLabelIdx = maxIndex(labelProbabilities);
-      System.out.println(
-          String.format(
-              "BEST MATCH: %s (%.2f%% likely)",
-              labels.get(bestLabelIdx), labelProbabilities[bestLabelIdx] * 100f));
+  public void loadModel(String pb, String labels) {
+    try {
+      graphDef = parent.loadBytes(pb);
+      allLabels = parent.loadStrings(labels);
+    } catch (Exception e) {
     }
   }
 
-  private static Tensor constructAndExecuteGraphToNormalizeImage(byte[] imageBytes) {
+  /**
+   *  XXX
+   */
+  public void analyze(PImage img) {
+    if (graphDef == null || allLabels == null) {
+      System.err.println("You need to download");
+      System.err.println("https://storage.googleapis.com/download.tensorflow.org/models/inception5h.zip");
+      System.err.println("and place the extracted files in the sketch's data folder");
+      throw new RuntimeException("No model files found");
+    }
+
+    // XXX: faster way to convert to uint8 RGB byte-array?
+    // ~15ms on Macbook Air
+    byte[] imageBytes = new byte[img.height*img.width*3];
+    img.loadPixels();
+    for (int i=0; i < img.pixels.length; i++) {
+        imageBytes[i*3+0] = (byte)((img.pixels[i] >> 16) & 0xff);  // R
+        imageBytes[i*3+1] = (byte)((img.pixels[i] >> 8) & 0xff);   // G
+        imageBytes[i*3+2] = (byte)(img.pixels[i] & 0xff);          // B
+    }
+
+    // construct and execute graph
+    // ~ 553ms on Macbook Air
+    Tensor image = constructAndExecuteGraphToNormalizeImage(imageBytes, img.width, img.height);
+    float[] labelProbabilities = executeInceptionGraph(graphDef, image);
+
+    // create sorted arrays of labels and their respective probabilities
+    length = (labelProbabilities.length < maxLabels) ? labelProbabilities.length : maxLabels;
+    labels = new String[length];
+    probabilities = new float[length];
+    for (int i=0; i < labelProbabilities.length; i++) {
+      for (int j=0; j < length; j++) {
+        if (probabilities[j] < labelProbabilities[i]) {
+          // insert and shift downwards
+          if (j < length-1) {
+            System.arraycopy(labels, j, labels, j+1, length-j-1);
+            System.arraycopy(probabilities, j, probabilities, j+1, length-j-1);
+          }
+          labels[j] = allLabels[i];
+          probabilities[j] = labelProbabilities[i];
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   *  XXX
+   */
+  public int length() {
+    return length;
+  }
+
+  /**
+   *  XXX
+   */
+  public String label(int index) {
+    if (length <= index) {
+      throw new RuntimeException("You need to call analyze(PImage) before you can retrieve labels");
+    }
+    return labels[index];
+  }
+
+  /**
+   *  XXX
+   */
+  public float probability(int index) {
+    if (length <= index) {
+      throw new RuntimeException("You need to call analyze(PImage) before you can retrieve probabilities");
+    }
+    return probabilities[index];
+  }
+
+
+  /*
+   *  Largely unmodified TensorFlow example code below
+   */
+
+  private static Tensor constructAndExecuteGraphToNormalizeImage(byte[] imageBytes, int width, int height) {
     try (Graph g = new Graph()) {
       GraphBuilder b = new GraphBuilder(g);
       // Some constants specific to the pre-trained model at:
@@ -90,16 +164,21 @@ public class SimpleImageLabeling {
       final float mean = 117f;
       final float scale = 1f;
 
+      // convert the imageBytes (1D array of uint8) to a 3D tensor
+      final long[] shape = {height, width, 3};
+      final Tensor image = Tensor.create(DataType.UINT8, shape, ByteBuffer.wrap(imageBytes));
+
       // Since the graph is being constructed once per execution here, we can use a constant for the
       // input image. If the graph were to be re-used for multiple input images, a placeholder would
       // have been more appropriate.
-      final Output input = b.constant("input", imageBytes);
+      final Output input = b.constantTensor("input", image);
       final Output output =
           b.div(
               b.sub(
                   b.resizeBilinear(
                       b.expandDims(
-                          b.cast(b.decodeJpeg(input, 3), DataType.FLOAT),
+                          // no need to decode the JPEG, start by converting the uint8 to floats
+                          b.cast(input, DataType.FLOAT),
                           b.constant("make_batch", 0)),
                       b.constant("size", new int[] {H, W})),
                   b.constant("mean", mean)),
@@ -128,35 +207,6 @@ public class SimpleImageLabeling {
     }
   }
 
-  private static int maxIndex(float[] probabilities) {
-    int best = 0;
-    for (int i = 1; i < probabilities.length; ++i) {
-      if (probabilities[i] > probabilities[best]) {
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  private static byte[] readAllBytesOrExit(Path path) {
-    try {
-      return Files.readAllBytes(path);
-    } catch (IOException e) {
-      System.err.println("Failed to read [" + path + "]: " + e.getMessage());
-      System.exit(1);
-    }
-    return null;
-  }
-
-  private static List<String> readAllLinesOrExit(Path path) {
-    try {
-      return Files.readAllLines(path, Charset.forName("UTF-8"));
-    } catch (IOException e) {
-      System.err.println("Failed to read [" + path + "]: " + e.getMessage());
-      System.exit(0);
-    }
-    return null;
-  }
 
   // In the fullness of time, equivalents of the methods of this class should be auto-generated from
   // the OpDefs linked into libtensorflow_jni.so. That would match what is done in other languages
@@ -190,6 +240,15 @@ public class SimpleImageLabeling {
       return g.opBuilder("DecodeJpeg", "DecodeJpeg")
           .addInput(contents)
           .setAttr("channels", channels)
+          .build()
+          .output(0);
+    }
+
+    // this was added to accomodate passing a custom tensor argument
+    Output constantTensor(String name, Tensor t) {
+      return g.opBuilder("Const", name)
+          .setAttr("dtype", t.dataType())
+          .setAttr("value", t)
           .build()
           .output(0);
     }
