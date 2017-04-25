@@ -57,7 +57,6 @@ public class SimpleImageLabeling {
 
     System.out.println("Using TensorFlow " + TensorFlow.version());
     // attempt to load the default model
-    // this takes a while currently
     loadModel(graphDefFn, labelsFn);
   }
 
