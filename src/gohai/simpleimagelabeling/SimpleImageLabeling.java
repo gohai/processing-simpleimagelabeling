@@ -43,6 +43,9 @@ public class SimpleImageLabeling {
   // loaded from file
   protected byte[] graphDef;
   protected String[] allLabels;
+  // TensorFlow graphs we reuse
+  protected Graph normalizeImageGraph;
+  protected Graph inceptionGraph;
   // calculated
   public int length;
   protected float[] probabilities;
@@ -67,6 +70,17 @@ public class SimpleImageLabeling {
     try {
       graphDef = parent.loadBytes(pb);
       allLabels = parent.loadStrings(labels);
+
+      // also build the graphs
+      if (normalizeImageGraph != null) {
+        // these need to be explicitly closed
+        normalizeImageGraph.close();
+      }
+      normalizeImageGraph = buildNormalizeImageGraph();
+      if (inceptionGraph != null) {
+        inceptionGraph.close();
+      }
+      inceptionGraph = buildInceptionGraph(graphDef);
     } catch (Exception e) {
     }
   }
@@ -92,10 +106,27 @@ public class SimpleImageLabeling {
         imageBytes[i*3+2] = (byte)(img.pixels[i] & 0xff);          // B
     }
 
-    // construct and execute graph
-    // ~ 553ms on Macbook Air
-    Tensor image = constructAndExecuteGraphToNormalizeImage(imageBytes, img.width, img.height);
-    float[] labelProbabilities = executeInceptionGraph(graphDef, image);
+    // convert image into tensor
+    final long[] shape = {img.height, img.width, 3};
+    Tensor image = Tensor.create(DataType.UINT8, shape, ByteBuffer.wrap(imageBytes));
+
+    // normalize tensor using the first of two graphs
+    // the placeholder "input" gets replaced by the image tensor through feed()
+    try (Session s = new Session(normalizeImageGraph)) {
+      // XXX: give Div a different name
+      image = s.runner().feed("input", image).fetch("Div").run().get(0);
+    }
+
+    // run the main graph
+    float[] labelProbabilities;
+    try (Session s = new Session(inceptionGraph)) {
+      Tensor result = s.runner().feed("input", image).fetch("output").run().get(0);
+      // extract results from tensor
+      // the original code also did some checking to make sure the dimensions were right
+      final long[] rshape = result.shape();
+      int nlabels = (int)rshape[1];
+      labelProbabilities = result.copyTo(new float[1][nlabels])[0];
+    }
 
     // create sorted arrays of labels and their respective probabilities
     length = (labelProbabilities.length < maxLabels) ? labelProbabilities.length : maxLabels;
@@ -144,68 +175,50 @@ public class SimpleImageLabeling {
     return probabilities[index];
   }
 
+  protected static Graph buildNormalizeImageGraph() {
+    Graph g = new Graph();
+    GraphBuilder b = new GraphBuilder(g);
+
+    // constants specific to inception model
+    // "The colors, represented as R, G, B in 1-byte each were converted to
+    // float using (value - Mean)/Scale."
+    final int H = 224;
+    final int W = 224;
+    final float mean = 117f;
+    final float scale = 1f;
+
+    // this will be replaced by the actual image later
+    // unsure if specifying a shape would bring a speed-up
+    final Output input = b.placeholder("input", DataType.UINT8);
+
+    final Output output =
+      // normalize
+      b.div(
+        b.sub(
+          // resize to 224x224
+          b.resizeBilinear(
+            b.expandDims(
+              // convert to float
+              b.cast(input, DataType.FLOAT),
+              b.constant("make_batch", 0)),
+            b.constant("size", new int[] {H, W})),
+          b.constant("mean", mean)),
+        b.constant("scale", scale));
+
+      return g;
+  }
+
+  protected static Graph buildInceptionGraph(byte[] graphDef) {
+    Graph g = new Graph();
+    // load representation loaded from file
+    g.importGraphDef(graphDef);
+    return g;
+  }
+
 
   /*
    *  Largely unmodified TensorFlow example code below
    */
-
-  private static Tensor constructAndExecuteGraphToNormalizeImage(byte[] imageBytes, int width, int height) {
-    try (Graph g = new Graph()) {
-      GraphBuilder b = new GraphBuilder(g);
-      // Some constants specific to the pre-trained model at:
-      // https://storage.googleapis.com/download.tensorflow.org/models/inception5h.zip
-      //
-      // - The model was trained with images scaled to 224x224 pixels.
-      // - The colors, represented as R, G, B in 1-byte each were converted to
-      //   float using (value - Mean)/Scale.
-      final int H = 224;
-      final int W = 224;
-      final float mean = 117f;
-      final float scale = 1f;
-
-      // convert the imageBytes (1D array of uint8) to a 3D tensor
-      final long[] shape = {height, width, 3};
-      final Tensor image = Tensor.create(DataType.UINT8, shape, ByteBuffer.wrap(imageBytes));
-
-      // Since the graph is being constructed once per execution here, we can use a constant for the
-      // input image. If the graph were to be re-used for multiple input images, a placeholder would
-      // have been more appropriate.
-      final Output input = b.constantTensor("input", image);
-      final Output output =
-          b.div(
-              b.sub(
-                  b.resizeBilinear(
-                      b.expandDims(
-                          // no need to decode the JPEG, start by converting the uint8 to floats
-                          b.cast(input, DataType.FLOAT),
-                          b.constant("make_batch", 0)),
-                      b.constant("size", new int[] {H, W})),
-                  b.constant("mean", mean)),
-              b.constant("scale", scale));
-      try (Session s = new Session(g)) {
-        return s.runner().fetch(output.op().name()).run().get(0);
-      }
-    }
-  }
-
-  private static float[] executeInceptionGraph(byte[] graphDef, Tensor image) {
-    try (Graph g = new Graph()) {
-      g.importGraphDef(graphDef);
-      try (Session s = new Session(g);
-          Tensor result = s.runner().feed("input", image).fetch("output").run().get(0)) {
-        final long[] rshape = result.shape();
-        if (result.numDimensions() != 2 || rshape[0] != 1) {
-          throw new RuntimeException(
-              String.format(
-                  "Expected model to produce a [1 N] shaped tensor where N is the number of labels, instead it produced one with shape %s",
-                  Arrays.toString(rshape)));
-        }
-        int nlabels = (int) rshape[1];
-        return result.copyTo(new float[1][nlabels])[0];
-      }
-    }
-  }
-
 
   // In the fullness of time, equivalents of the methods of this class should be auto-generated from
   // the OpDefs linked into libtensorflow_jni.so. That would match what is done in other languages
@@ -243,11 +256,10 @@ public class SimpleImageLabeling {
           .output(0);
     }
 
-    // this was added to accomodate passing a custom tensor argument
-    Output constantTensor(String name, Tensor t) {
-      return g.opBuilder("Const", name)
-          .setAttr("dtype", t.dataType())
-          .setAttr("value", t)
+    // added
+    Output placeholder(String name, DataType dtype) {
+      return g.opBuilder("Placeholder", name)
+          .setAttr("dtype", dtype)
           .build()
           .output(0);
     }
