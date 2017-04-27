@@ -4,15 +4,10 @@ see [examples/Test/Test.pde](examples/Test/Test.pde)
 
 ## TODO
 
+* build a Pi 2/3 optimized version of the JNI library
 * look into using different models (different, more labels?)
 * attempt to make the code generic so that it can work with different models
 * expose GraphBuilder class?
-
-## Required libraries on ARM Linux
-
-Those are most likely already installed on stock Raspbian, to be verified:
-
-    libpthread.so.0 libdl.so.2 libm.so.6 libstdc++.so.6 libgcc_s.so.1
 
 ## Notes for compiling the JNI bindings for TensorFlow on ARM Linux
 

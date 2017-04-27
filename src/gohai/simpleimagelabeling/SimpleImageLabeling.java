@@ -89,6 +89,7 @@ public class SimpleImageLabeling {
    *  XXX
    */
   public void analyze(PImage img) {
+    // whole function is currently ~2.1s on Pi 3
     if (graphDef == null || allLabels == null) {
       System.err.println("You need to download");
       System.err.println("https://storage.googleapis.com/download.tensorflow.org/models/inception5h.zip");
@@ -196,6 +197,7 @@ public class SimpleImageLabeling {
       b.div(
         b.sub(
           // resize to 224x224
+          // XXX: does this deform the image? better to pass a cropped image from the strt?
           b.resizeBilinear(
             b.expandDims(
               // convert to float
