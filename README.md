@@ -1,5 +1,7 @@
 # Simple Image Labeling
 
+Use a pre-trained [Inception model](http://arxiv.org/abs/1512.00567) with Processing
+
 see [examples/Test/Test.pde](examples/Test/Test.pde)
 
 ## TODO
