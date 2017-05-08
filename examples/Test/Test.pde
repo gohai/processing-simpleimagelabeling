@@ -1,15 +1,15 @@
 import gohai.simpleimagelabeling.*;
 SimpleImageLabeling sil;
-PImage grace;
+PImage cover;
 
 void setup() {
   size(517, 606);
-  grace = loadImage("grace_hopper.jpg");
+  cover = loadImage("cover.jpg");
 
   sil = new SimpleImageLabeling(this);
 
   // analyze the image
-  sil.analyze(grace);
+  sil.analyze(cover);
 
   // iterate through the labels with high probability
   for (int i=0; i < sil.length; i++) {
@@ -18,5 +18,5 @@ void setup() {
 }
 
 void draw() {
-  image(grace, 0, 0);
+  image(cover, 0, 0);
 }
