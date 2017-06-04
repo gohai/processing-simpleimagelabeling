@@ -1,5 +1,5 @@
 /**
- *  This requires the GLCapture library to be installed.
+ *  This requires the GL Video library to be installed.
  *
  *  For use with the Raspberry Pi camera, make sure the camera is
  *  enabled in the Raspberry Pi Configuration tool and add the line
@@ -24,8 +24,6 @@ void setup() {
   video.play();
 
   sil = new SimpleImageLabeling(this);
-  // load from custom location
-  sil.loadModel("../Test/data/tensorflow_inception_graph.pb", "../Test/data/imagenet_comp_graph_label_strings.txt");
 }
 
 void draw() {
@@ -40,8 +38,4 @@ void draw() {
   for (int i=0; i < sil.length && i < 3; i++) {
     text(sil.label(i), 10, 34+i*31);
   }
-}
-
-void mousePressed() {
-  saveFrame();
 }

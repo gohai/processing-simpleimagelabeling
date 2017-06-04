@@ -31,7 +31,7 @@ import processing.core.*;
 
 
 /**
- *  XXX
+ *  Image Labeling Class
  */
 public class SimpleImageLabeling {
 
@@ -64,7 +64,9 @@ public class SimpleImageLabeling {
   }
 
   /**
-   *  XXX
+   *  Load a pre-trained model and a list of labels from file
+   *  @param pb path to tensorflow_inception_graph.pb
+   *  @param labels path to imagenet_comp_graph_label_strings.txt
    */
   public void loadModel(String pb, String labels) {
     try {
@@ -86,7 +88,8 @@ public class SimpleImageLabeling {
   }
 
   /**
-   *  XXX
+   *  Classify an image
+   *  @param img PImage instance to classify
    */
   public void analyze(PImage img) {
     // whole function is currently ~2.1s on Pi 3
@@ -150,14 +153,20 @@ public class SimpleImageLabeling {
   }
 
   /**
-   *  XXX
+   *  Get the number of labels available
+   *  @return int
    */
   public int length() {
     return length;
   }
 
   /**
-   *  XXX
+   *  Get the label text for a given index
+   *
+   *  The label with the lowest index was determined to have the highest probability, the second
+   *  highest the second lowest, and so on.
+   *  @param index 0..length()-1
+   *  @return String
    */
   public String label(int index) {
     if (length <= index) {
@@ -167,7 +176,12 @@ public class SimpleImageLabeling {
   }
 
   /**
-   *  XXX
+   *  Get the numberic probability (score) for a given (label) index
+   *
+   *  The label with the lowest index was determined to have the highest probability, the second
+   *  highest the second lowest, and so on.
+   *  @param index 0..length()-1
+   *  @return float 0.0 to 1.0
    */
   public float probability(int index) {
     if (length <= index) {
