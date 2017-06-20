@@ -21,7 +21,7 @@ void setup() {
 
   // first camera at 320x240 with 1fps
   video = new GLCapture(this, GLCapture.list()[0]);
-  video.play();
+  video.start();
 
   sil = new SimpleImageLabeling(this);
 }
