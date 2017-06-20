@@ -1,3 +1,9 @@
+/**
+ *  This example uses a Neural Network to analyze an image
+ *  and prints the three most likely labels (out of 1000)
+ *  to the console when it is done.
+ */
+
 import gohai.simpleimagelabeling.*;
 SimpleImageLabeling sil;
 PImage cover;
